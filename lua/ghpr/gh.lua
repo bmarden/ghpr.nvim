@@ -6,6 +6,17 @@ local M = {}
 ---@param opts { title: string, body: string, base: string, head: string }
 ---@param callback fun(url: string?, err: string?)
 function M.create_pr(opts, callback)
+	-- First push the current branch to the remote
+	local git = require("ghpr.git")
+
+	local push_output, push_err = git.push_branch(opts.head)
+	if push_err then
+		callback(nil, "Failed to push branch: " .. push_err)
+		return
+	end
+
+	vim.notify("Branch pushed successfully: " .. push_output, vim.log.levels.TRACE)
+
 	local cmd = {
 		config.options.gh_cli_path,
 		"pr",
