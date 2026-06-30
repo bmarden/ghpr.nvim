@@ -32,9 +32,29 @@ run a full file-by-file review with inline comments.
     "folke/snacks.nvim",
     "esmuellert/codediff.nvim",
   },
+  -- Declare the commands/keys you use so lazy.nvim knows when to load the
+  -- plugin. If you only set `opts`, lazy never loads it until something else
+  -- requires it, and keymaps registered in setup() won't fire.
+  cmd = {
+    "GhPrCreate",
+    "GhPrView",
+    "GhPrEdit",
+    "GhPrAddReviewer",
+    "GhPrList",
+    "GhPrReview",
+  },
+  keys = {
+    { "<leader>gc", "<cmd>GhPrCreate<cr>", desc = "Create GitHub PR" },
+    { "<leader>gp", "<cmd>GhPrList<cr>", desc = "Pick GitHub PR" },
+    { "<leader>gr", "<cmd>GhPrReview<cr>", desc = "Review current branch PR" },
+  },
   opts = {},
 }
 ```
+
+> **Note:** because lazy-loading is driven by the `cmd`/`keys` you declare, the
+> keymaps in `keymaps`/`review_keymaps` below are most useful for non-lazy
+> setups. With lazy.nvim, prefer declaring keys in the spec above.
 
 ## Commands
 
@@ -45,7 +65,7 @@ run a full file-by-file review with inline comments.
 | `:GhPrEdit [n]`          | Edit a PR description (`<C-s>` to save)             |
 | `:GhPrAddReviewer [n]`   | Add reviewers from a picker (users + teams)         |
 | `:GhPrList`              | Pick a PR from a list with description preview      |
-| `:GhPrReview <n>`        | Open a PR for file-by-file review (CodeDiff)        |
+| `:GhPrReview [n]`        | Open a PR for file-by-file review (CodeDiff)        |
 | `:GhPrReviewClose`       | Close the active review session                     |
 | `:GhPrReviewRefresh`     | Invalidate cached review data                       |
 | `:GhPrReviewStats`       | Show review progress (viewed/unviewed)              |
@@ -54,12 +74,15 @@ run a full file-by-file review with inline comments.
 
 ## Picker keymaps
 
-In the `:GhPrList` picker:
+In the `:GhPrList` picker, with a PR focused:
 
-- `<CR>` — view the PR description
-- `<C-r>` — open the full CodeDiff review
+- `<CR>` — open an action menu listing every action and its shortcut
+- `<C-r>` — review: check out the PR's branch and open the CodeDiff review
 - `<C-e>` — edit the description
 - `<C-a>` — add a reviewer
+
+The quick keys above run their action directly; `<CR>` is the discoverable menu
+for the same actions (it also includes "View description").
 
 ## Configuration
 
@@ -89,7 +112,6 @@ require("ghpr").setup({
     toggle_viewed = "<leader>gv",
     next_unviewed = "]u",
     prev_unviewed = "[u",
-    refresh = "<leader>gr",
     close_review = "<leader>gq",
     add_comment = "a",
     delete_comment = "d",
