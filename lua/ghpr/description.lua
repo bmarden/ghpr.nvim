@@ -53,7 +53,8 @@ function M.view(number)
 			string.rep("─", 60),
 			"",
 		}
-		for _, l in ipairs(vim.split(pr.body or "", "\n")) do
+		-- GitHub returns bodies with CRLF; strip \r so it doesn't render as ^M.
+		for _, l in ipairs(vim.split((pr.body or ""):gsub("\r", ""), "\n")) do
 			table.insert(lines, l)
 		end
 
@@ -90,7 +91,8 @@ function M.edit(number)
 		end
 
 		local buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(pr.body or "", "\n"))
+		-- GitHub returns bodies with CRLF; strip \r so it doesn't render as ^M.
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split((pr.body or ""):gsub("\r", ""), "\n"))
 		vim.bo[buf].filetype = "markdown"
 		vim.bo[buf].bufhidden = "wipe"
 

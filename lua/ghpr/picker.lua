@@ -21,7 +21,8 @@ local function preview_lines(pr)
 		string.rep("─", 60),
 		"",
 	}
-	for _, l in ipairs(vim.split(pr.body or "", "\n")) do
+	-- GitHub returns bodies with CRLF; strip \r so it doesn't render as ^M.
+	for _, l in ipairs(vim.split((pr.body or ""):gsub("\r", ""), "\n")) do
 		table.insert(lines, l)
 	end
 	return lines
@@ -72,13 +73,22 @@ local function checkout_and_review(pr)
 end
 
 -- Available actions on a focused PR. `run(pr)` performs the action; `name` is
--- the snacks action id; `key` is the quick shortcut shown in the menu.
----@type { name: string, label: string, key: string, run: fun(pr: table) }[]
+-- the snacks action id; `key` is the quick shortcut. `<CR>` runs its action
+-- directly (via the picker `confirm` handler); all others are bound as
+-- quick-keys on both the input and list windows. `hint` is the short label
+-- shown in the picker title so the shortcuts are discoverable.
+--
+-- Quick keys use Alt (<A-...>) rather than Ctrl: snacks binds most Ctrl-letter
+-- keys by default (<c-g> = toggle_live/print_path, <c-r> = insert-register
+-- prefix, etc.), and those defaults win over per-window overrides in the list
+-- window. The chosen Alt keys are all unbound in snacks' defaults.
+---@type { name: string, label: string, key: string, hint: string, run: fun(pr: table) }[]
 local ACTIONS = {
 	{
 		name = "view_desc",
 		label = "View description",
 		key = "<CR>",
+		hint = "view",
 		run = function(pr)
 			require("ghpr.description").view(pr.number)
 		end,
@@ -86,7 +96,8 @@ local ACTIONS = {
 	{
 		name = "review",
 		label = "Review (checkout + CodeDiff)",
-		key = "<C-r>",
+		key = "<A-r>",
+		hint = "review",
 		run = function(pr)
 			checkout_and_review(pr)
 		end,
@@ -94,7 +105,8 @@ local ACTIONS = {
 	{
 		name = "edit_desc",
 		label = "Edit description",
-		key = "<C-e>",
+		key = "<A-e>",
+		hint = "edit",
 		run = function(pr)
 			require("ghpr.description").edit(pr.number)
 		end,
@@ -102,30 +114,23 @@ local ACTIONS = {
 	{
 		name = "add_reviewer",
 		label = "Add reviewer",
-		key = "<C-a>",
+		key = "<A-g>",
+		hint = "reviewer",
 		run = function(pr)
 			require("ghpr.reviewers").add(pr.number)
 		end,
 	},
 }
 
--- Show a menu of available actions for the focused PR (bound to <CR>).
----@param pr table
-local function open_action_menu(pr)
-	local labels = {}
+---Build the picker title with the quick-key hints appended, e.g.
+---"Pull Requests  ·  <CR> view  <A-c> review  <A-e> edit  <A-g> reviewer".
+---@return string
+local function build_title()
+	local parts = {}
 	for _, a in ipairs(ACTIONS) do
-		table.insert(labels, a)
+		table.insert(parts, string.format("%s %s", a.key, a.hint))
 	end
-	vim.ui.select(labels, {
-		prompt = string.format("PR #%d — actions", pr.number),
-		format_item = function(a)
-			return string.format("%-32s %s", a.label, a.key)
-		end,
-	}, function(choice)
-		if choice then
-			choice.run(pr)
-		end
-	end)
+	return "Pull Requests  ·  " .. table.concat(parts, "  ")
 end
 
 ---Open the PR picker.
@@ -157,8 +162,12 @@ function M.open()
 		end
 
 		-- Build snacks action handlers + quick-key bindings from the registry.
+		-- Every action runs directly on the focused PR. <CR> is wired via the
+		-- picker `confirm` handler; the rest get quick-keys on both the input
+		-- and list windows so they fire regardless of which window has focus.
 		local actions = {}
 		local keys = {}
+		local confirm_action
 		for _, a in ipairs(ACTIONS) do
 			actions[a.name] = function(picker, item)
 				picker:close()
@@ -166,14 +175,15 @@ function M.open()
 					a.run(item.pr)
 				end
 			end
-			-- <CR> is reserved for the action menu (confirm); others get a quick key.
-			if a.key ~= "<CR>" then
+			if a.key == "<CR>" then
+				confirm_action = a
+			else
 				keys[a.key:lower()] = { a.name, mode = { "n", "i" }, desc = a.label }
 			end
 		end
 
 		Snacks.picker.pick({
-			title = "Pull Requests",
+			title = build_title(),
 			items = items,
 			format = function(item)
 				local pr = item.pr
@@ -184,17 +194,20 @@ function M.open()
 				}
 			end,
 			preview = "preview",
-			-- <CR> opens an action menu listing every action and its shortcut.
+			-- <CR> runs the default action (view description) directly.
 			confirm = function(picker, item)
 				picker:close()
-				if item and item.pr then
-					open_action_menu(item.pr)
+				if item and item.pr and confirm_action then
+					confirm_action.run(item.pr)
 				end
 			end,
 			-- Quick-action keys: each runs its action directly on the focused PR.
 			actions = actions,
 			win = {
 				input = {
+					keys = keys,
+				},
+				list = {
 					keys = keys,
 				},
 			},
