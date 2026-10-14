@@ -151,10 +151,9 @@ function M.update_buffer(bufnr)
 	debug_log("  Added", marks_added, "extmarks")
 end
 
--- Update indicators by triggering CodeDiff refresh
+-- Re-render the CodeDiff explorer so the hooked prepare_node redraws indicators
 function M.update()
-	debug_log("Triggering CodeDiff refresh to update indicators")
-	-- Get the explorer object and trigger refresh
+	debug_log("Re-rendering CodeDiff explorer to update indicators")
 	local ok, lifecycle = pcall(require, "codediff.ui.lifecycle.accessors")
 	if not ok then
 		debug_log("Could not load lifecycle module")
@@ -162,18 +161,17 @@ function M.update()
 	end
 
 	local tabpage = vim.api.nvim_get_current_tabpage()
-	local explorer = lifecycle.get_explorer(tabpage)
-	if not explorer then
+	local explorer = lifecycle.get_panel_view(tabpage)
+	if not explorer or not explorer.tree then
 		debug_log("No explorer found for current tab")
 		return
 	end
 
-	local ok_refresh, explorer_refresh = pcall(require, "codediff.ui.explorer.refresh")
-	if ok_refresh and explorer_refresh.refresh then
-		vim.schedule(function()
-			explorer_refresh.refresh(explorer)
-		end)
-	end
+	vim.schedule(function()
+		if not explorer.is_hidden then
+			explorer.tree:render()
+		end
+	end)
 end
 
 -- Setup highlight groups
@@ -267,27 +265,8 @@ function M.setup()
 		group = augroup,
 		pattern = "GhprViewedStateChanged",
 		callback = function()
-			debug_log("Viewed state changed, triggering CodeDiff refresh")
-			-- Get the explorer object and trigger refresh
-			local ok, lifecycle = pcall(require, "codediff.ui.lifecycle.accessors")
-			if not ok then
-				debug_log("Could not load lifecycle module")
-				return
-			end
-
-			local tabpage = vim.api.nvim_get_current_tabpage()
-			local explorer = lifecycle.get_explorer(tabpage)
-			if not explorer then
-				debug_log("No explorer found for current tab")
-				return
-			end
-
-			local ok_refresh, explorer_refresh = pcall(require, "codediff.ui.explorer.refresh")
-			if ok_refresh and explorer_refresh.refresh then
-				vim.schedule(function()
-					explorer_refresh.refresh(explorer)
-				end)
-			end
+			debug_log("Viewed state changed, re-rendering CodeDiff explorer")
+			M.update()
 		end,
 	})
 end

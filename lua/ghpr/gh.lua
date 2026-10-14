@@ -111,7 +111,7 @@ end
 ---List PRs for the current repo.
 ---@param callback fun(prs: table[]?, err: string?)
 function M.list_prs(callback)
-	local fields = "number,title,author,headRefName,baseRefName,state,isDraft,updatedAt,url,body"
+	local fields = "id,number,title,author,headRefName,baseRefName,state,isDraft,updatedAt,url,body"
 	gh({ "pr", "list", "--json", fields, "--limit", "50" }, { json = true }, callback)
 end
 

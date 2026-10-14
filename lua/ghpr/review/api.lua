@@ -1,6 +1,12 @@
 -- GitHub GraphQL API wrapper with async execution and caching
 local M = {}
 
+---@class PrData
+---@field owner string Repository owner
+---@field repo string Repository name
+---@field pr_number number Pull request number
+---@field pr_id? string GraphQL node ID; falls back to review session state when omitted
+
 -- Weak-referenced cache for automatic GC
 local cache = setmetatable({}, { __mode = "v" })
 
@@ -206,6 +212,12 @@ function M.clear_cache()
 end
 
 -- Mark a file as viewed/unviewed on GitHub
+---@param owner string Repository owner
+---@param repo string Repository name
+---@param pr_number number Pull request number
+---@param file_path string File path to mark
+---@param viewed boolean true to mark as viewed, false to unmark
+---@param callback fun(err: string?) Callback function to receive error message if any
 function M.mark_file_viewed(owner, repo, pr_number, file_path, viewed, callback)
 	-- First, get PR ID from cache or state
 	local state = require("ghpr.review.state")
@@ -559,6 +571,69 @@ mutation($id: ID!) {
 		end
 
 		callback(data)
+	end)
+end
+
+---@param pr_data PrData
+function M.submit_review(pr_data, event, body, callback)
+	local state = require("ghpr.review.state")
+	local owner, repo, pr_number = pr_data.owner, pr_data.repo, pr_data.pr_number
+
+	local pr_id = pr_data.pr_id
+	if not pr_id then
+		local pr_metadata = state.get_pr_metadata(owner, repo, pr_number)
+		pr_id = pr_metadata and pr_metadata.pr_id
+	end
+
+	if not pr_id then
+		notify("PR metadata not available", vim.log.levels.ERROR)
+		callback("PR metadata not available")
+		return
+	end
+
+	if event ~= "APPROVE" and event ~= "REQUEST_CHANGES" and event ~= "COMMENT" then
+		notify("Invalid review event: " .. tostring(event), vim.log.levels.ERROR)
+		callback("Invalid review event")
+		return
+	end
+
+	if event == "COMMENT" or event == "REQUEST_CHANGES" then
+		if not body or body:match("^%s*$") then
+			notify("Review body cannot be empty for COMMENT or REQUEST_CHANGES", vim.log.levels.ERROR)
+			callback("Review body cannot be empty")
+			return
+		end
+	end
+
+	local variables = {
+		pullRequestId = pr_id,
+		event = event,
+		body = body,
+	}
+
+	local mutation = [[
+    mutation($pullRequestId: ID!, $event: PullRequestReviewEvent!, $body: String) {
+      addPullRequestReview(input: {
+        pullRequestId: $pullRequestId,
+        event: $event,
+        body: $body
+      }) {
+        pullRequestReview { id state }
+      }
+    }
+  ]]
+
+	-- Execute the mutation
+	execute_graphql(mutation, variables, function(_, err)
+		if err then
+			notify("Failed to submit review: " .. err, vim.log.levels.ERROR)
+			callback(err)
+			return
+		end
+
+		-- Invalidate cache so next fetch gets fresh data
+		M.invalidate_cache(owner, repo, pr_number)
+		callback(nil)
 	end)
 end
 

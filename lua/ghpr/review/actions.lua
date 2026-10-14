@@ -16,7 +16,7 @@ local function get_path_from_explorer()
 	end
 
 	local tabpage = vim.api.nvim_get_current_tabpage()
-	local explorer = lifecycle.get_explorer(tabpage)
+	local explorer = lifecycle.get_panel_view(tabpage)
 	if not explorer or not explorer.tree then
 		return nil
 	end
@@ -231,6 +231,53 @@ function M.show_stats()
 	)
 
 	vim.notify(message, vim.log.levels.INFO)
+end
+
+local REVIEW_EVENTS = {
+	{ event = "COMMENT", label = "Comment" },
+	{ event = "APPROVE", label = "Approve" },
+	{ event = "REQUEST_CHANGES", label = "Request changes" },
+}
+
+-- Submit a review verdict; defaults to the active review session's PR
+---@param pr_data? PrData
+function M.submit_review(pr_data)
+	if not pr_data then
+		local pr = vim.g.ghpr_active_pr
+		if not pr then
+			vim.notify("No active PR review session", vim.log.levels.WARN)
+			return
+		end
+		pr_data = { owner = pr.owner, repo = pr.repo, pr_number = pr.number }
+	end
+
+	vim.ui.select(REVIEW_EVENTS, {
+		prompt = string.format("Submit review for PR #%d", pr_data.pr_number),
+		format_item = function(item)
+			return item.label
+		end,
+	}, function(choice)
+		if not choice then
+			return
+		end
+
+		local prompt = choice.event == "APPROVE" and "Review body (optional): " or "Review body: "
+		vim.ui.input({ prompt = prompt }, function(body)
+			if body == nil then
+				return
+			end
+
+			local api = require("ghpr.review.api")
+			api.submit_review(pr_data, choice.event, body ~= "" and body or nil, function(err)
+				if not err then
+					vim.notify(
+						string.format("Submitted '%s' review on PR #%d", choice.label, pr_data.pr_number),
+						vim.log.levels.INFO
+					)
+				end
+			end)
+		end)
+	end)
 end
 
 -- Refresh visual indicators

@@ -14,7 +14,7 @@ local function get_path_from_explorer()
   end
 
   local tabpage = vim.api.nvim_get_current_tabpage()
-  local explorer = lifecycle.get_explorer(tabpage)
+  local explorer = lifecycle.get_panel_view(tabpage)
   if not explorer or not explorer.tree then
     return nil
   end

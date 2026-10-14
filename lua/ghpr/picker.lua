@@ -87,7 +87,7 @@ local ACTIONS = {
 	{
 		name = "view_desc",
 		label = "View description",
-		key = "<CR>",
+		key = "<A-d>",
 		hint = "view",
 		run = function(pr)
 			require("ghpr.description").view(pr.number)
@@ -96,7 +96,7 @@ local ACTIONS = {
 	{
 		name = "review",
 		label = "Review (checkout + CodeDiff)",
-		key = "<A-r>",
+		key = "<CR>",
 		hint = "review",
 		run = function(pr)
 			checkout_and_review(pr)
@@ -118,6 +118,25 @@ local ACTIONS = {
 		hint = "reviewer",
 		run = function(pr)
 			require("ghpr.reviewers").add(pr.number)
+		end,
+	},
+	{
+		name = "submit_review",
+		label = "Submit review",
+		key = "<A-s>",
+		hint = "submit",
+		run = function(pr)
+			local owner, repo, err = require("ghpr.git").owner_repo()
+			if not owner or not repo then
+				vim.notify("ghpr: " .. (err or "could not resolve owner/repo"), vim.log.levels.ERROR)
+				return
+			end
+			require("ghpr.review.actions").submit_review({
+				owner = owner,
+				repo = repo,
+				pr_number = pr.number,
+				pr_id = pr.id,
+			})
 		end,
 	},
 }

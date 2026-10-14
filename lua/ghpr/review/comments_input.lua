@@ -98,8 +98,8 @@ function M.open_compose_window(context, callback, initial_body)
 	local opts = { noremap = true, silent = true, buffer = buf }
 
 	-- Submit with <C-s> or :w
-	vim.keymap.set("n", "<C-s>", submit_comment, opts)
-	vim.keymap.set("i", "<C-s>", submit_comment, opts)
+	vim.keymap.set({ "n", "i" }, "<C-c><C-c>", submit_comment, opts)
+	-- vim.keymap.set("i", "<C-s>", submit_comment, opts)
 
 	-- Cancel with <C-c> or <Esc> in normal mode
 	vim.keymap.set("n", "<C-c>", close_compose, opts)
