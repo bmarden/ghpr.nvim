@@ -92,6 +92,10 @@ local function setup_buffer_keymaps(bufnr)
 		M.close_review()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Close review session" }))
 
+	vim.keymap.set("n", km.submit_review, function()
+		actions.submit_review()
+	end, vim.tbl_extend("force", keymap_opts, { desc = "Submit PR review" }))
+
 	-- Comment actions
 	vim.keymap.set({ "n", "v" }, km.add_comment, function()
 		comments_actions.add_comment()
@@ -125,6 +129,7 @@ local function clear_all_keymaps()
 		km.next_unviewed,
 		km.prev_unviewed,
 		km.close_review,
+		km.submit_review,
 		km.add_comment,
 		km.delete_comment,
 		km.edit_comment,

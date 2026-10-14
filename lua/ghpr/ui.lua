@@ -26,30 +26,27 @@ local get_pr_template = function()
 	return nil, "No PR template found at " .. template_path
 end
 
----Build the initial buffer lines for the PR creation form.
+---Build the initial buffer lines for the PR body form.
+---The body is everything above the separator; the summary region below it is
+---locked read-only. Title is collected separately via a prompt.
 ---@param branch string
 ---@param base string
 ---@param files string[]
 ---@return string[]
 local function build_lines(branch, base, files)
-	local lines = {
-		"# PR Title (edit this line)",
-		"",
-		"# Description (write below, markdown supported)",
-		"",
-		"",
-		SEPARATOR,
-		string.format("Base: %s/%s  ←  Head: %s", config.options.remote, base, branch),
-		"",
-		FILES_HEADER,
-	}
+	local body_lines = {}
 	local pr_template, _ = get_pr_template()
 	if pr_template then
-		-- Insert into lines
-		for i, line in ipairs(pr_template) do
-			table.insert(lines, 3 + i, line)
-		end
+		vim.list_extend(body_lines, pr_template)
+	else
+		table.insert(body_lines, "")
 	end
+
+	local lines = vim.deepcopy(body_lines)
+	table.insert(lines, SEPARATOR)
+	table.insert(lines, string.format("Base: %s/%s  ←  Head: %s", config.options.remote, base, branch))
+	table.insert(lines, "")
+	table.insert(lines, FILES_HEADER)
 
 	if #files == 0 then
 		table.insert(lines, "  (no changed files)")
@@ -77,39 +74,18 @@ local function find_separator(buf)
 	return #lines
 end
 
----Parse title and body from the buffer content.
+---Parse the body: everything above the first separator, trailing blanks trimmed.
 ---@param buf integer
----@return string title, string body
-local function parse_buffer(buf)
+---@return string body
+local function parse_body(buf)
 	local sep = find_separator(buf)
-	local lines = vim.api.nvim_buf_get_lines(buf, 0, sep - 1, false)
+	local body_lines = vim.api.nvim_buf_get_lines(buf, 0, sep - 1, false)
 
-	local title = ""
-	local body_lines = {}
-	local in_body = false
-
-	for _, line in ipairs(lines) do
-		if not in_body then
-			if line:match("^# PR Title") then
-				goto continue
-			elseif line:match("^# Description") then
-				in_body = true
-				goto continue
-			elseif vim.trim(line) ~= "" then
-				title = line
-			end
-		else
-			table.insert(body_lines, line)
-		end
-		::continue::
-	end
-
-	-- Trim trailing empty lines from body
 	while #body_lines > 0 and vim.trim(body_lines[#body_lines]) == "" do
 		table.remove(body_lines)
 	end
 
-	return vim.trim(title), table.concat(body_lines, "\n")
+	return table.concat(body_lines, "\n")
 end
 
 ---Lock lines from `start` (0-indexed) to end of buffer as read-only via extmarks.
@@ -137,18 +113,24 @@ local function lock_summary_region(buf, start)
 	})
 end
 
----Submit the PR.
+---Offer to add reviewers to a freshly created PR.
+---@param number integer?
+local function prompt_reviewers(number)
+	vim.ui.select({ "Yes", "No" }, { prompt = "Add reviewers to this PR?" }, function(choice)
+		if choice == "Yes" then
+			require("ghpr.reviewers").add(number)
+		end
+	end)
+end
+
+---Submit the PR with the given title.
 ---@param buf integer
 ---@param win integer
 ---@param branch string
 ---@param base string
-local function submit(buf, win, branch, base)
-	local title, body = parse_buffer(buf)
-
-	if title == "" or title:match("^# ") then
-		vim.notify("PR title is required — edit the first line", vim.log.levels.WARN)
-		return
-	end
+---@param title string
+local function submit(buf, win, branch, base, title)
+	local body = parse_body(buf)
 
 	vim.notify("Creating PR...", vim.log.levels.INFO)
 
@@ -166,10 +148,56 @@ local function submit(buf, win, branch, base)
 			vim.api.nvim_win_close(win, true)
 		end
 		vim.notify("PR created: " .. (url or ""), vim.log.levels.INFO)
+		prompt_reviewers(nil)
 	end)
 end
 
----Open the PR creation floating window.
+---Open the PR body float after the title has been collected.
+---@param branch string
+---@param base string
+---@param files string[]
+---@param title string
+local function open_body_form(branch, base, files, title)
+	local lines = build_lines(branch, base, files)
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].filetype = "markdown"
+	vim.bo[buf].bufhidden = "wipe"
+
+	local width = math.min(90, math.floor(vim.o.columns * 0.8))
+	local height = math.min(#lines + 2, math.floor(vim.o.lines * 0.8))
+
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		width = width,
+		height = height,
+		col = math.floor((vim.o.columns - width) / 2),
+		row = math.floor((vim.o.lines - height) / 2),
+		style = "minimal",
+		border = "rounded",
+		title = string.format(" Create PR: %s ", title),
+		title_pos = "center",
+	})
+
+	local sep = find_separator(buf)
+	lock_summary_region(buf, sep - 1)
+
+	-- Place cursor on the first body line.
+	vim.api.nvim_win_set_cursor(win, { 1, 0 })
+
+	vim.keymap.set("n", "<C-s>", function()
+		submit(buf, win, branch, base, title)
+	end, { buffer = buf, desc = "Submit PR" })
+
+	vim.keymap.set("n", "q", function()
+		if vim.api.nvim_win_is_valid(win) then
+			vim.api.nvim_win_close(win, true)
+		end
+	end, { buffer = buf, desc = "Cancel PR creation" })
+end
+
+---Open the PR creation flow: prompt for a title, then open the body float.
 function M.open()
 	local branch, branch_err = git.current_branch()
 	if not branch or branch == "" then
@@ -190,43 +218,13 @@ function M.open()
 		return
 	end
 
-	local lines = build_lines(branch, base, files)
-
-	local buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-	vim.bo[buf].filetype = "markdown"
-	vim.bo[buf].bufhidden = "wipe"
-
-	local width = math.min(90, math.floor(vim.o.columns * 0.8))
-	local height = math.min(#lines + 2, math.floor(vim.o.lines * 0.8))
-
-	local win = vim.api.nvim_open_win(buf, true, {
-		relative = "editor",
-		width = width,
-		height = height,
-		col = math.floor((vim.o.columns - width) / 2),
-		row = math.floor((vim.o.lines - height) / 2),
-		style = "minimal",
-		border = "rounded",
-		title = " Create Pull Request ",
-		title_pos = "center",
-	})
-
-	local sep = find_separator(buf)
-	lock_summary_region(buf, sep - 1)
-
-	-- Place cursor on title line (line 1)
-	vim.api.nvim_win_set_cursor(win, { 1, 0 })
-
-	vim.keymap.set("n", "<C-s>", function()
-		submit(buf, win, branch, base)
-	end, { buffer = buf, desc = "Submit PR" })
-
-	vim.keymap.set("n", "q", function()
-		if vim.api.nvim_win_is_valid(win) then
-			vim.api.nvim_win_close(win, true)
+	vim.ui.input({ prompt = "PR title: ", default = "" }, function(title)
+		if not title or vim.trim(title) == "" then
+			vim.notify("ghpr: PR creation cancelled (title required)", vim.log.levels.WARN)
+			return
 		end
-	end, { buffer = buf, desc = "Cancel PR creation" })
+		open_body_form(branch, base, files, vim.trim(title))
+	end)
 end
 
 return M

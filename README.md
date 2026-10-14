@@ -6,12 +6,12 @@ run a full file-by-file review with inline comments.
 
 ## Features
 
-- 📝 Create a PR from the current branch (auto-pushes first)
-- 👀 View a PR description in a floating window
-- ✏️ Edit a PR description in place
-- 👥 Add reviewers — users and org teams — via a picker
-- 🔭 Pick a PR from a list with a live description preview (snacks)
-- 🔍 Review a PR file-by-file in [CodeDiff](https://github.com/esmuellert/codediff.nvim)
+- Create a PR from the current branch (auto-pushes first)
+- View a PR description in a floating window
+- Edit a PR description in place
+- Add reviewers — users and org teams — via a picker
+- Pick a PR from a list with a live description preview (snacks)
+- Review a PR file-by-file in [CodeDiff](https://github.com/esmuellert/codediff.nvim)
   with viewed-state tracking and inline review comments
 
 ## Requirements

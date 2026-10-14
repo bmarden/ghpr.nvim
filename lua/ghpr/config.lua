@@ -25,6 +25,7 @@ local defaults = {
 		next_unviewed = "]u",
 		prev_unviewed = "[u",
 		close_review = "<leader>gq",
+		submit_review = "<leader>gs",
 		add_comment = "a",
 		delete_comment = "d",
 		edit_comment = "e",
